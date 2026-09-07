@@ -2,7 +2,7 @@ name: Rostender Parser Bot
 
 on:
   schedule:
-    - cron: '0 */2 * * *' # Автозапуск каждые 2 часа
+        - cron: '45 6 * * *' # Запуск каждый день в 06:45 UTC (09:45 по МСК)
   workflow_dispatch: # Кнопка для ручного запуска в любое время
 
 jobs:
