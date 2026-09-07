@@ -2,7 +2,7 @@ name: Rostender Parser Bot
 
 on:
   schedule:
-        - cron: '45 6 * * *' # Запуск каждый день в 06:45 UTC (09:45 по МСК)
+    - cron: '45 6 * * *' # Запуск каждый день в 06:45 UTC (09:45 по МСК)
   workflow_dispatch: # Кнопка для ручного запуска в любое время
 
 jobs:
@@ -10,12 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Проверка кода
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Распаковка оригинального парсера
         run: |
           unzip parser.zip
-          # Проверяем, как распаковался архив, и вытаскиваем файлы в корень
           if [ -d "parser" ]; then
             mv parser/* .
             rm -rf parser
@@ -26,9 +25,7 @@ jobs:
           rm -f parser.zip
 
       - name: Настройка Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+        uses: actions/setup-python@v5.3.0
 
       - name: Установка зависимостей
         run: |
@@ -37,15 +34,24 @@ jobs:
 
       - name: Внедрение кода отправки в Telegram
         run: |
-          # Этот шаг автоматически настраивает главный файл перед запуском
           mkdir -p src
           cat << 'EOF' > src/main.py
           import os
           import sys
           import json
           import logging
-          sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-          from telegram_notifier import check_and_notify_tenders
+
+          # Явно добавляем корневую папку (где лежит telegram_notifier.py) в пути поиска Python
+          CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+          ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+          sys.path.insert(0, ROOT_DIR)
+          sys.path.insert(0, CURRENT_DIR)
+
+          try:
+              from telegram_notifier import check_and_notify_tenders
+          except ImportError:
+              from src.telegram_notifier import check_and_notify_tenders
+
           logging.basicConfig(level=logging.INFO)
 
           def main():
@@ -56,7 +62,6 @@ jobs:
               except Exception as e:
                   logging.warning(f"Оригинальный запуск завершился или пропущен: {e}")
               
-              # Считываем собранные тендеры и отправляем в наш бот
               for path in ["data/active_tenders.json", "src/data/active_tenders.json"]:
                   if os.path.exists(path):
                       with open(path, "r", encoding="utf-8") as f:
