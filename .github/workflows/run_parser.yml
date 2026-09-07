@@ -35,22 +35,31 @@ jobs:
       - name: Внедрение кода отправки в Telegram
         run: |
           mkdir -p src
+          
+          # Копируем наш файл telegram_notifier.py внутрь папки src на всякий случай
+          if [ -f "telegram_notifier.py" ]; then
+            cp telegram_notifier.py src/
+          fi
+
+          # Перезаписываем главный файл запуска
           cat << 'EOF' > src/main.py
           import os
           import sys
           import json
           import logging
 
-          # Явно добавляем корневую папку (где лежит telegram_notifier.py) в пути поиска Python
+          # Добавляем все возможные пути в систему, чтобы исключить ModuleNotFoundError
           CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
           ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
           sys.path.insert(0, ROOT_DIR)
           sys.path.insert(0, CURRENT_DIR)
 
           try:
+              import telegram_notifier
               from telegram_notifier import check_and_notify_tenders
           except ImportError:
-              from src.telegram_notifier import check_and_notify_tenders
+              sys.path.append(os.getcwd())
+              from telegram_notifier import check_and_notify_tenders
 
           logging.basicConfig(level=logging.INFO)
 
@@ -62,9 +71,20 @@ jobs:
               except Exception as e:
                   logging.warning(f"Оригинальный запуск завершился или пропущен: {e}")
               
-              for path in ["data/active_tenders.json", "src/data/active_tenders.json"]:
+              # Поиск файла результатов
+              paths_to_check = [
+                  "data/active_tenders.json", 
+                  "src/data/active_tenders.json",
+                  "../data/active_tenders.json"
+              ]
+              for path in paths_to_check:
+                  full_path = os.path.join(CURRENT_DIR, path) if not os.path.isabs(path) else path
                   if os.path.exists(path):
                       with open(path, "r", encoding="utf-8") as f:
+                          check_and_notify_tenders(json.load(f))
+                      break
+                  elif os.path.exists(full_path):
+                      with open(full_path, "r", encoding="utf-8") as f:
                           check_and_notify_tenders(json.load(f))
                       break
           if __name__ == "__main__":
