@@ -34,59 +34,40 @@ jobs:
 
       - name: Внедрение кода отправки в Telegram
         run: |
-          mkdir -p src
-          
-          # Копируем наш файл telegram_notifier.py внутрь папки src на всякий случай
-          if [ -f "telegram_notifier.py" ]; then
-            cp telegram_notifier.py src/
-          fi
-
-          # Перезаписываем главный файл запуска
-          cat << 'EOF' > src/main.py
+          # Перезаписываем КОРНЕВОЙ файл main.py
+          cat << 'EOF' > main.py
           import os
           import sys
           import json
           import logging
 
-          # Добавляем все возможные пути в систему, чтобы исключить ModuleNotFoundError
-          CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-          ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
-          sys.path.insert(0, ROOT_DIR)
-          sys.path.insert(0, CURRENT_DIR)
+          # Добавляем текущую директорию в пути Python
+          sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-          try:
-              import telegram_notifier
-              from telegram_notifier import check_and_notify_tenders
-          except ImportError:
-              sys.path.append(os.getcwd())
-              from telegram_notifier import check_and_notify_tenders
-
+          from telegram_notifier import check_and_notify_tenders
           logging.basicConfig(level=logging.INFO)
 
           def main():
               try:
+                  # Вызываем оригинальный парсинг
                   from src.stages.params import PipelineParams
                   from src.stages.search_active import run as run_search
                   run_search(PipelineParams())
               except Exception as e:
                   logging.warning(f"Оригинальный запуск завершился или пропущен: {e}")
               
-              # Поиск файла результатов
+              # Ищем собранные тендеры в папке data
               paths_to_check = [
                   "data/active_tenders.json", 
-                  "src/data/active_tenders.json",
-                  "../data/active_tenders.json"
+                  "src/data/active_tenders.json"
               ]
               for path in paths_to_check:
-                  full_path = os.path.join(CURRENT_DIR, path) if not os.path.isabs(path) else path
                   if os.path.exists(path):
                       with open(path, "r", encoding="utf-8") as f:
                           check_and_notify_tenders(json.load(f))
-                      break
-                  elif os.path.exists(full_path):
-                      with open(full_path, "r", encoding="utf-8") as f:
-                          check_and_notify_tenders(json.load(f))
-                      break
+                      return
+              logging.warning("Файл с тендерами не найден. Возможно, парсер ничего не собрал.")
+
           if __name__ == "__main__":
               main()
           EOF
@@ -95,7 +76,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python src/main.py
+        run: python main.py # Запускаем из корня, а не из src!
 
       - name: Сохранение базы отправленных тендеров
         uses: stefanzweifel/git-auto-commit-action@v5
