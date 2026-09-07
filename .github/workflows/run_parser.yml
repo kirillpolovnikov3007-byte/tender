@@ -1,0 +1,79 @@
+name: Rostender Parser Bot
+
+on:
+  schedule:
+    - cron: '0 */2 * * *' # Автозапуск каждые 2 часа
+  workflow_dispatch: # Кнопка для ручного запуска в любое время
+
+jobs:
+  run-parser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Проверка кода
+        uses: actions/checkout@v4
+
+      - name: Распаковка оригинального парсера
+        run: |
+          unzip parser.zip
+          # Проверяем, как распаковался архив, и вытаскиваем файлы в корень
+          if [ -d "parser" ]; then
+            mv parser/* .
+            rm -rf parser
+          elif [ -d "rostender-parse-main" ]; then
+            mv rostender-parse-main/* .
+            rm -rf rostender-parse-main
+          fi
+          rm -f parser.zip
+
+      - name: Настройка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Установка зависимостей
+        run: |
+          if [ -f "requirements.txt" ]; then pip install -r requirements.txt; fi
+          pip install requests
+
+      - name: Внедрение кода отправки в Telegram
+        run: |
+          # Этот шаг автоматически настраивает главный файл перед запуском
+          mkdir -p src
+          cat << 'EOF' > src/main.py
+          import os
+          import sys
+          import json
+          import logging
+          sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+          from telegram_notifier import check_and_notify_tenders
+          logging.basicConfig(level=logging.INFO)
+
+          def main():
+              try:
+                  from src.stages.params import PipelineParams
+                  from src.stages.search_active import run as run_search
+                  run_search(PipelineParams())
+              except Exception as e:
+                  logging.warning(f"Оригинальный запуск завершился или пропущен: {e}")
+              
+              # Считываем собранные тендеры и отправляем в наш бот
+              for path in ["data/active_tenders.json", "src/data/active_tenders.json"]:
+                  if os.path.exists(path):
+                      with open(path, "r", encoding="utf-8") as f:
+                          check_and_notify_tenders(json.load(f))
+                      break
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - name: Запуск парсера
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python src/main.py
+
+      - name: Сохранение базы отправленных тендеров
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Обновление базы отправленных тендеров [skip ci]"
+          file_pattern: 'sent_tenders.json'
